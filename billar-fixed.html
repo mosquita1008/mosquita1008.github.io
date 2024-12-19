@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Control de Mesas de Billar</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color:#252424;
+        }
+
+        h1 {
+            text-align: center;
+            color: #ffffff;
+            margin-bottom: 40px;
+        }
+
+        .mesas-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+        }
+
+        .mesa {
+            background: rgb(245, 244, 244);
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .mesa h2 {
+            margin: 0 0 20px 0;
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .tiempo {
+            font-size: 48px;
+            text-align: center;
+            margin: 20px 0;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        .total {
+            font-size: 24px;
+            text-align: right;
+            margin: 15px 0;
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .botones {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            color: rgb(0, 0, 0);
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-iniciar { background-color: #2980b9; }
+        .btn-detener { background-color: #c0392b; }
+        .btn-consumo { background-color: #27ae60; }
+
+        .consumos {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .consumo-item {
+            background-color: #e4a2a2;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background: rgb(255, 254, 254);
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            margin: 50px auto;
+        }
+
+        select, input {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ffffff;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        select { width: 200px; }
+        input { width: 80px; }
+
+        .factura {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .factura h3 {
+            margin: 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .factura-detalle { margin: 15px 0; }
+
+        .factura-total {
+            font-size: 24px;
+            text-align: right;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #eee;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Control de Mesas de Billar</h1>
+    <div class="mesas-container" id="mesas"></div>
+
+    <div id="modalConsumo" class="modal">
+        <div class="modal-content">
+            <h2>Agregar Consumo</h2>
+            <div>
+                <select id="productoSelect">
+                    <option value="cerveza">Cerveza - $3.500</option>
+                    <option value="refresco">Refresco - $3.000</option>
+                    <option value="agua">Agua - $2.000</option>
+                    <option value="snacks">Snacks - $2.500</option>
+                    <option value="aguardiente"> aguardiente - 80.000</option>
+                </select>
+                <input type="number" id="cantidadInput" value="1" min="1">
+                <div class="botones">
+                    <button class="btn-consumo" onclick="agregarConsumo()">Agregar</button>
+                    <button onclick="cerrarModal()">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const precioHora = 4000;
+        const productos = {
+            cerveza: { nombre: 'Cerveza', precio: 3500 },
+            refresco: { nombre: 'Refresco', precio: 3000 },
+            agua: { nombre: 'Agua', precio: 2000 },
+            snacks: { nombre: 'Snacks', precio: 2500 },
+            aguardiente: { nombre: 'aguardiente', precio: 80000 },
+        };
+
+        let mesas = {};
+        let mesaSeleccionada = null;
+
+        function formatearDinero(valor) {
+            return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(valor);
+        }
+
+        function formatearTiempo(ms) {
+            const horas = Math.floor(ms / 3600000);
+            const minutos = Math.floor((ms % 3600000) / 60000);
+            const segundos = Math.floor((ms % 60000) / 1000);
+            return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
+        }
+
+        function calcularCostoTiempo(tiempoMs) {
+            // Convertir milisegundos a horas
+            const horasCompletas = Math.floor(tiempoMs / 3600000);
+            // Solo cobrar si ha pasado al menos una hora
+            return horasCompletas > 0 ? horasCompletas * precioHora : 0;
+        }
+
+        function inicializarMesas() {
+            const mesasContainer = document.getElementById('mesas');
+            for (let i = 1; i <= 2; i++) {
+                const mesaDiv = document.createElement('div');
+                mesaDiv.className = 'mesa';
+                mesaDiv.innerHTML = `
+                    <h2>Mesa ${i}</h2>
+                    <div class="tiempo">00:00:00</div>
+                    <div class="total">Total: ${formatearDinero(0)}</div>
+                    <div class="botones">
+                        <button class="btn-iniciar" onclick="iniciarMesa(${i})">Iniciar</button>
+                        <button class="btn-detener" onclick="detenerMesa(${i})" style="display:none">Detener</button>
+                        <button class="btn-consumo" onclick="mostrarModalConsumo(${i})" style="display:none">Agregar Consumo</button>
+                    </div>
+                    <div class="consumos"></div>
+                `;
+                mesasContainer.appendChild(mesaDiv);
+            }
+        }
+
+        function iniciarMesa(numeroMesa) {
+            mesas[numeroMesa] = {
+                inicio: Date.now(),
+                activa: true,
+                consumos: [],
+                totalConsumos: 0
+            };
+
+            const mesaDiv = document.querySelector(`.mesa:nth-child(${numeroMesa})`);
+            mesaDiv.querySelector('.btn-iniciar').style.display = 'none';
+            mesaDiv.querySelector('.btn-detener').style.display = 'inline-block';
+            mesaDiv.querySelector('.btn-consumo').style.display = 'inline-block';
+
+            actualizarTiempo();
+        }
+
+        function actualizarTiempo() {
+            for (const [numeroMesa, mesa] of Object.entries(mesas)) {
+                if (mesa.activa) {
+                    const tiempoTranscurrido = Date.now() - mesa.inicio;
+                    const costoTiempo = calcularCostoTiempo(tiempoTranscurrido);
+                    const total = costoTiempo + mesa.totalConsumos;
+
+                    const mesaDiv = document.querySelector(`.mesa:nth-child(${numeroMesa})`);
+                    mesaDiv.querySelector('.tiempo').textContent = formatearTiempo(tiempoTranscurrido);
+                    mesaDiv.querySelector('.total').textContent = `Total: ${formatearDinero(total)}`;
+                }
+            }
+            requestAnimationFrame(actualizarTiempo);
+        }
+
+        function detenerMesa(numeroMesa) {
+            const mesa = mesas[numeroMesa];
+            if (!mesa || !mesa.activa) return;
+
+            const tiempoTotal = Date.now() - mesa.inicio;
+            const costoTiempo = calcularCostoTiempo(tiempoTotal);
+            const total = costoTiempo + mesa.totalConsumos;
+
+            let resumen = `
+                <div class="factura">
+                    <h3>Factura Mesa ${numeroMesa}</h3>
+                    <div class="factura-detalle">
+                        <p><strong>Tiempo jugado:</strong> ${formatearTiempo(tiempoTotal)}</p>
+                        <p><strong>Costo tiempo (${Math.floor(tiempoTotal / 3600000)} hora${Math.floor(tiempoTotal / 3600000) > 1 ? 's' : ''}):</strong> ${formatearDinero(costoTiempo)}</p>
+                        <h4>Consumos:</h4>
+            `;
+
+            if (mesa.consumos.length > 0) {
+                mesa.consumos.forEach(consumo => {
+                    resumen += `
+                        <div class="consumo-item">
+                            <span>${consumo.producto} x${consumo.cantidad}</span>
+                            <span>${formatearDinero(consumo.total)}</span>
+                        </div>
+                    `;
+                });
+            } else {
+                resumen += '<p>No hay consumos registrados</p>';
+            }
+
+            resumen += `
+                    </div>
+                    <div class="factura-total">
+                        Total a pagar: ${formatearDinero(total)}
+                    </div>
+                </div>
+            `;
+
+            const modalFactura = document.createElement('div');
+            modalFactura.className = 'modal';
+            modalFactura.style.display = 'block';
+            modalFactura.innerHTML = `
+                <div class="modal-content">
+                    ${resumen}
+                    <div class="botones">
+                        <button class="btn-consumo" onclick="this.parentElement.parentElement.parentElement.remove()">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modalFactura);
+
+            const mesaDiv = document.querySelector(`.mesa:nth-child(${numeroMesa})`);
+            mesaDiv.querySelector('.tiempo').textContent = '00:00:00';
+            mesaDiv.querySelector('.total').textContent = `Total: ${formatearDinero(0)}`;
+            mesaDiv.querySelector('.btn-iniciar').style.display = 'inline-block';
+            mesaDiv.querySelector('.btn-detener').style.display = 'none';
+            mesaDiv.querySelector('.btn-consumo').style.display = 'none';
+            mesaDiv.querySelector('.consumos').innerHTML = '';
+
+            delete mesas[numeroMesa];
+        }
+
+        function mostrarModalConsumo(numeroMesa) {
+            mesaSeleccionada = numeroMesa;
+            document.getElementById('modalConsumo').style.display = 'block';
+        }
+
+        function cerrarModal() {
+            document.getElementById('modalConsumo').style.display = 'none';
+            mesaSeleccionada = null;
+        }
+
+        function agregarConsumo() {
+            if (!mesaSeleccionada) return;
+
+            const productoId = document.getElementById('productoSelect').value;
+            const cantidad = parseInt(document.getElementById('cantidadInput').value);
+            const producto = productos[productoId];
+            const total = producto.precio * cantidad;
+
+            mesas[mesaSeleccionada].consumos.push({
+                producto: producto.nombre,
+                cantidad,
+                total
+            });
+            mesas[mesaSeleccionada].totalConsumos += total;
+
+            const mesaDiv = document.querySelector(`.mesa:nth-child(${mesaSeleccionada})`);
+            const consumosDiv = mesaDiv.querySelector('.consumos');
+            const consumoItem = document.createElement('div');
+            consumoItem.className = 'consumo-item';
+            consumoItem.innerHTML = `
+                <span>${producto.nombre} x${cantidad}</span>
+                <span>${formatearDinero(total)}</span>
+            `;
+            consumosDiv.appendChild(consumoItem);
+
+            cerrarModal();
+        }
+
+        inicializarMesas();
+    </script>
+</body>
+</html>
